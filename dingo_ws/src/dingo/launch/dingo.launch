@@ -1,35 +1,54 @@
 <launch>
-    <arg name="is_sim" default="0"/>
-    <arg name="is_physical" default="1"/>
-    <arg name="use_joystick" default="1"/>
-    <arg name="use_keyboard" default="0"/>
-    <arg name="serial_port" default="/dev/serial0"/>
-    <arg name="use_imu" default="0"/>
+    <arg name="is_sim"        default="0"/>
+    <arg name="is_physical"   default="1"/>
+    <arg name="use_joystick"  default="1"/>
+    <arg name="use_keyboard"  default="0"/>
+    <arg name="serial_port"   default="/dev/serial0"/>
+    <arg name="use_imu"       default="0"/>
+
+    <!-- 新增:AI 接管开关 -->
+    <arg name="use_ai_camera" default="1"/>
 
     <group if="$(arg is_physical)">
-        <!-- Communication Node between Arduino and Pi -->
-        <node pkg="rosserial_python" type="serial_node.py" name="dingo_rosserial" args="$(arg serial_port)" output="screen"/>
-
-        <!-- LCD Screen -->
-        <node pkg = "dingo_peripheral_interfacing" type = "dingo_lcd_interfacing.py" name = "dingo_LCD_node" output="screen"></node>
+        <node pkg="rosserial_python" type="serial_node.py"
+              name="dingo_rosserial" args="$(arg serial_port)" output="screen"/>
+        <node pkg="dingo_peripheral_interfacing"
+              type="dingo_lcd_interfacing.py" name="dingo_LCD_node"
+              output="screen"/>
     </group>
 
-    <!-- If want to use the joystick, launch joystick node -->
     <group if="$(arg use_joystick)">
         <node pkg="joy" type="joy_node" name="JOYSTICK">
             <param name="autorepeat_rate" value="30"/>
-            <!-- <param name="joy_node/dev" value="/dev/input/js0"/>
-            <arg name="coalesce_interval" value="0.02"/>
-            -->
         </node>
     </group>
 
     <group if="$(arg use_keyboard)">
-        <node pkg = "dingo_input_interfacing" type = "Keyboard.py" name = "keyboard_input_listener" output="screen"></node>
+        <node pkg="dingo_input_interfacing" type="Keyboard.py"
+              name="keyboard_input_listener" output="screen"/>
     </group>
-    
+
     <!-- Dingo Driver -->
-    <node pkg="dingo" type="dingo_driver.py"
-        name="dingo" args="$(arg is_sim) $(arg is_physical) $(arg use_imu)" output="screen"/>
+    <node pkg="dingo" type="dingo_driver.py" name="dingo"
+          args="$(arg is_sim) $(arg is_physical) $(arg use_imu)"
+          output="screen"/>
+
+    <!-- ===== AI 接管块 ===== -->
+    <group if="$(arg use_ai_camera)">
+        <!-- rosbridge: 让 host 上的 gesture_v2.py 能用 roslibpy 接入 -->
+        <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch">
+            <arg name="port" value="9090"/>
+        </include>
+
+        <!-- bridge: /ai_camera/cmd -> /joy -->
+        <node pkg="dingo" type="dingo_ai_bridge.py" name="dingo_ai_bridge"
+              output="screen">
+            <param name="enabled"  value="true"/>
+            <param name="max_x"    value="0.4"/>
+            <param name="max_y"    value="0.3"/>
+            <param name="max_yaw"  value="1.0"/>
+            <param name="cmd_rate" value="30.0"/>
+        </node>
+    </group>
 </launch>
-    
+

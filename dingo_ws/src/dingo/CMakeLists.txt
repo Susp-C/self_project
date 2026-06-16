@@ -160,6 +160,7 @@ include_directories(
 catkin_install_python(PROGRAMS
    scripts/run_robot.py
    scripts/dingo_driver.py
+   scripts/dingo_ai_bridge.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
 ## Mark executables for installation
