@@ -1,4 +1,3 @@
-
 version: '3.4'
 
 services:
@@ -8,15 +7,15 @@ services:
     privileged: true
     cap_add:
       - SYS_PTRACE
+      - SYS_RAWIO    # 很多时候操作底层内存需要这个特权
     security_opt:
       - seccomp:unconfined   
     volumes:
       - ./dingo_ws:/dingo_ws
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
+      - /sys:/sys      # 必须给GPIO留的活口
     devices:
       - /dev:/dev
-    build:
-      context: .
-      dockerfile: ./Dockerfile
-    command: /bin/sh -c "while sleep 1000; do :; done"
+      - /dev/gpiomem:/dev/gpiomem   # 为 RPi.GPIO 硬开路
+      - /dev/mem:/dev/mem           # SPI 时常需要用到的绝对内存

@@ -54,8 +54,8 @@ class InputInterface:
         self.developing_command.yaw_rate = np.round(msg.axes[3],self.rounding_dp) * self.config.max_yaw_rate #rx
 
         self.developing_command.pitch = np.round(msg.axes[4],self.rounding_dp) * self.config.max_pitch #ry
-        self.developing_command.height_movement = np.round(msg.axes[7],self.rounding_dp) #dpady
-        self.developing_command.roll_movement = -np.round(msg.axes[6],self.rounding_dp) #dpadx
+        self.developing_command.height_movement = np.round(msg.axes[5],self.rounding_dp) #dpady
+        self.developing_command.roll_movement = -np.round(msg.axes[4],self.rounding_dp) #dpadx
 
         self.new_command = self.developing_command
         
