@@ -1,4 +1,57 @@
 FROM osrf/ros:noetic-desktop-full
+<launch>
+  <arg name="is_sim"        default="0"/>
+  <arg name="is_physical"   default="1"/>
+  <arg name="use_joystick"  default="1"/>
+  <arg name="use_keyboard"  default="0"/>
+  <arg name="serial_port"   default="/dev/serial0"/>
+  <arg name="use_imu"       default="0"/>
+
+  <!-- 新增 -->
+  <arg name="use_ai_camera" default="0"/>
+  <arg name="rosbridge_port" default="9090"/>
+
+  <group if="$(arg is_physical)">
+    <node pkg="rosserial_python" type="serial_node.py"
+          name="dingo_rosserial" args="$(arg serial_port)" output="screen"/>
+
+    <node pkg="dingo_peripheral_interfacing"
+          type="dingo_lcd_interfacing.py"
+          name="dingo_LCD_node" output="screen"/>
+  </group>
+
+  <group if="$(arg use_joystick)">
+    <node pkg="joy" type="joy_node" name="JOYSTICK">
+      <param name="autorepeat_rate" value="30"/>
+    </node>
+  </group>
+
+  <group if="$(arg use_keyboard)">
+    <node pkg="dingo_input_interfacing" type="Keyboard.py"
+          name="keyboard_input_listener" output="screen"/>
+  </group>
+
+  <node pkg="dingo" type="dingo_driver.py"
+        name="dingo"
+        args="$(arg is_sim) $(arg is_physical) $(arg use_imu)"
+        output="screen"/>
+
+  <!-- ===== AI 接管部分(需要 rosbridge + ai_bridge) ===== -->
+  <group if="$(arg use_ai_camera)">
+    <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch">
+      <arg name="port" value="$(arg rosbridge_port)"/>
+    </include>
+
+    <node pkg="dingo" type="dingo_ai_bridge.py"
+          name="dingo_ai_bridge" output="screen">
+      <param name="enabled"  value="true"/>
+      <param name="max_x"    value="0.4"/>
+      <param name="max_y"    value="0.3"/>
+      <param name="max_yaw"  value="1.0"/>
+      <param name="cmd_rate" value="30.0"/>
+    </node>
+  </group>
+</launch>
 
 RUN sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
 
