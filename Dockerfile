@@ -21,7 +21,10 @@ RUN apt-get update && \
     ros-noetic-joy \
     ros-noetic-rosserial \
     ros-noetic-rosserial-arduino \
-    git 
+    ros-noetic-rosbridge-server
+    ros-noetic-rosbridge-suite
+    git \
+&& rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install \
     #Following are from pupper code
