@@ -1,53 +1,86 @@
 <launch>
-  <arg name="is_sim"        default="0"/>
-  <arg name="is_physical"   default="1"/>
-  <arg name="use_joystick"  default="1"/>
-  <arg name="use_keyboard"  default="0"/>
-  <arg name="serial_port"   default="/dev/serial0"/>
-  <arg name="use_imu"       default="0"/>
+  <!-- Basic Dingo options -->
+  <arg name="is_sim" default="0"/>
+  <arg name="is_physical" default="1"/>
+  <arg name="use_joystick" default="1"/>
+  <arg name="use_keyboard" default="0"/>
+  <arg name="serial_port" default="/dev/serial0"/>
+  <arg name="use_imu" default="0"/>
 
-  <!-- 新增 -->
+  <!-- AI camera / rosbridge options -->
   <arg name="use_ai_camera" default="0"/>
   <arg name="rosbridge_port" default="9090"/>
 
+  <!-- Physical robot hardware nodes -->
   <group if="$(arg is_physical)">
-    <node pkg="rosserial_python" type="serial_node.py"
-          name="dingo_rosserial" args="$(arg serial_port)" output="screen"/>
+    <node pkg="rosserial_python"
+          type="serial_node.py"
+          name="dingo_rosserial"
+          args="$(arg serial_port)"
+          output="screen"/>
 
     <node pkg="dingo_peripheral_interfacing"
           type="dingo_lcd_interfacing.py"
-          name="dingo_LCD_node" output="screen"/>
+          name="dingo_LCD_node"
+          output="screen"/>
   </group>
 
+  <!-- Joystick handling.
+       If AI camera is enabled, joystick publishes to /joy_human first.
+       dingo_ai_bridge then decides whether /joy should come from joystick or AI.
+       This gives the real controller priority over AI.
+  -->
   <group if="$(arg use_joystick)">
-    <node pkg="joy" type="joy_node" name="JOYSTICK">
-      <param name="autorepeat_rate" value="30"/>
-    </node>
+    <group if="$(arg use_ai_camera)">
+      <node pkg="joy" type="joy_node" name="JOYSTICK" output="screen">
+        <param name="autorepeat_rate" value="30"/>
+        <remap from="/joy" to="/joy_human"/>
+      </node>
+    </group>
+
+    <group unless="$(arg use_ai_camera)">
+      <node pkg="joy" type="joy_node" name="JOYSTICK" output="screen">
+        <param name="autorepeat_rate" value="30"/>
+      </node>
+    </group>
   </group>
 
+  <!-- Optional keyboard input -->
   <group if="$(arg use_keyboard)">
-    <node pkg="dingo_input_interfacing" type="Keyboard.py"
-          name="keyboard_input_listener" output="screen"/>
+    <node pkg="dingo_input_interfacing"
+          type="Keyboard.py"
+          name="keyboard_input_listener"
+          output="screen"/>
   </group>
 
-  <node pkg="dingo" type="dingo_driver.py"
+  <!-- Main Dingo driver -->
+  <node pkg="dingo"
+        type="dingo_driver.py"
         name="dingo"
         args="$(arg is_sim) $(arg is_physical) $(arg use_imu)"
         output="screen"/>
 
-  <!-- ===== AI 接管部分(需要 rosbridge + ai_bridge) ===== -->
+  <!-- AI camera mode:
+       1. Start rosbridge websocket on port 9090
+       2. Start dingo_ai_bridge
+       3. dingo_ai_bridge publishes the final /joy command
+  -->
   <group if="$(arg use_ai_camera)">
     <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch">
       <arg name="port" value="$(arg rosbridge_port)"/>
     </include>
 
-    <node pkg="dingo" type="dingo_ai_bridge.py"
-          name="dingo_ai_bridge" output="screen">
-      <param name="enabled"  value="true"/>
-      <param name="max_x"    value="0.4"/>
-      <param name="max_y"    value="0.3"/>
-      <param name="max_yaw"  value="1.0"/>
+    <node pkg="dingo"
+          type="dingo_ai_bridge.py"
+          name="dingo_ai_bridge"
+          output="screen">
+      <param name="enabled" value="true"/>
+      <param name="max_x" value="0.4"/>
+      <param name="max_y" value="0.3"/>
+      <param name="max_yaw" value="1.0"/>
       <param name="cmd_rate" value="30.0"/>
+      <param name="joy_axis_thresh" value="0.15"/>
+      <param name="joy_active_hold" value="1.5"/>
     </node>
   </group>
 </launch>
