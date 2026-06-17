@@ -1,0 +1,6 @@
+ultralytics
+opencv-python
+flask
+roslibpy
+numpy
+picamera2
