@@ -501,7 +501,7 @@ def vision_loop():
     print("[init] starting Picamera2...")
     picam2 = Picamera2()
     cfg = picam2.create_video_configuration(
-        main={"size": (W, H), "format": "BGR888"},
+        main={"size": (W, H), "format": "RGB888"},
         buffer_count=4,
     )
     picam2.configure(cfg)
@@ -526,11 +526,11 @@ def vision_loop():
 
     while True:
         raw = picam2.capture_array()
-        # Picamera2 BGR888 already returns BGR ordering
-        bgr = raw
+        # Picamera2 RGB888 already returns RGB ordering
+        rgb = raw
 
         if frame_idx % POSE_EVERY_N_FRAMES == 0:
-            detections_cache = detector.detect(bgr)
+            detections_cache = detector.detect(rgb)
         detections = detections_cache
         frame_idx = (frame_idx + 1) % 1_000_000
 
@@ -622,7 +622,7 @@ def vision_loop():
         ros.publish(cmd, mode, ros_enabled)
 
         # visualization
-        vis = bgr.copy()
+        vis = rgb.copy()
 
         for d in detections:
             x1, y1, x2, y2, _ = d["box"]
@@ -826,17 +826,13 @@ def mjpeg_gen():
             time.sleep(0.05)
             continue
         yield (
-            b"--frame
-"
-            b"Content-Type: image/jpeg
-"
-            b"Content-Length: " + str(len(jpg)).encode() + b"
-
-" +
-            jpg + b"
-"
+            b"--frame\r\n"
+            b"Content-Type: image/jpeg\r\n"
+            b"Content-Length: " + str(len(jpg)).encode() + b"\r\n\r\n" +
+            jpg + b"\r\n"
         )
         time.sleep(0.05)
+
 
 
 @app.route("/stream.mjpg")
