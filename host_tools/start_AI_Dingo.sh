@@ -60,8 +60,8 @@ echo "[start] launching dingo.launch inside container..."
 
 sudo docker exec -d "${CONTAINER}" bash -lc "
     source /opt/ros/noetic/setup.bash &&
-    source /root/dingo_ws/devel/setup.bash &&
-    roslaunch dingo dingo.launch use_ai_camera:=1 use_joystick:=0
+    source /root/DingoQuadruped/dingo_ws/devel/setup.bash &&
+    roslaunch dingo dingo.launch use_ai_camera:=1 use_joystick:=1
 "
 
 # 等 rosbridge 启动
