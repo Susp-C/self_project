@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Robot Dog Controller</title>
+
+    <style>
+        :root {
+            --scale-factor: 1;
+        }
+
+        html, body {
+            background-color: #121212;
+            color: #ffffff;
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            user-select: none;
+            touch-action: none;
+        }
+
+        .wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            color: #00ffcc;
+            margin: 0 0 10px 0;
+            font-size: 20px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .controller-panel {
+            position: relative;
+            display: flex;
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: flex-start;
+            width: 100%;
+            max-width: 980px;
+            height: calc(360px * var(--scale-factor));
+            padding: 20px;
+            background-color: #1a1a1a;
+            border-radius: 24px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            box-sizing: border-box;
+        }
+
+        /* ---- SHOULDER BUTTONS (LB / RB) pinned to top corners ---- */
+        .shoulder-btn {
+            position: absolute;
+            top: 14px;
+            width: calc(90px * var(--scale-factor));
+            height: calc(38px * var(--scale-factor));
+            border-radius: 10px;
+            font-size: 16px;
+            z-index: 5;
+        }
+        #LB { left: 20px; }
+        #RB { right: 20px; }
+
+        /* Connection status dot (center top) - red = no link, cyan = connected */
+        .status-dot {
+            position: absolute;
+            top: 18px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #ff3b3b;
+            box-shadow: 0 0 8px rgba(255, 59, 59, 0.6);
+            transition: background-color 0.2s, box-shadow 0.2s;
+            z-index: 5;
+        }
+        .status-dot.online {
+            background-color: #00ffcc;
+            box-shadow: 0 0 8px rgba(0, 255, 204, 0.7);
+        }
+
+        /* Take-control button - forces control back to this web joystick
+           (publishes /ai_camera/enable = False, kicking out voice/camera) */
+        #takeover {
+            position: absolute;
+            top: 34px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 6px 16px;
+            background-color: #ff8c00;
+            color: #121212;
+            border: none;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: bold;
+            white-space: nowrap;
+            z-index: 6;
+        }
+        #takeover.pressed {
+            background-color: #00ffcc;
+            box-shadow: 0 0 14px #00ffcc;
+        }
+
+        /* ---- LEFT SIDE: PLUS-SHAPED D-PAD ---- */
+        .dpad-container {
+            display: grid;
+            grid-template-columns: repeat(3, calc(40px * var(--scale-factor)));
+            grid-template-rows: repeat(3, calc(40px * var(--scale-factor)));
+            gap: 0;
+            margin-top: calc(55px * var(--scale-factor));
+        }
+        /* The four arms of the cross */
+        #forward  { grid-column: 2; grid-row: 1; }   /* up */
+        #left     { grid-column: 1; grid-row: 2; }   /* left */
+        #right    { grid-column: 3; grid-row: 2; }   /* right */
+        #backward { grid-column: 2; grid-row: 3; }   /* down */
+        /* Center hub of the cross (non-interactive) */
+        .dpad-center {
+            grid-column: 2;
+            grid-row: 2;
+            background-color: #262626;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .dpad-center::after {
+            content: '';
+            width: 40%;
+            height: 40%;
+            border-radius: 50%;
+            background-color: #1a1a1a;
+            box-shadow: inset 0 0 6px rgba(0,0,0,0.6);
+        }
+
+        /* D-pad arms styled as one connected plus */
+        .dpad-btn {
+            background-color: #262626;
+            border: none;
+            border-radius: 0;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        #forward  { border-radius: 14px 14px 0 0; }   /* round top */
+        #backward { border-radius: 0 0 14px 14px; }   /* round bottom */
+        #left     { border-radius: 14px 0 0 14px; }   /* round left */
+        #right    { border-radius: 0 14px 14px 0; }   /* round right */
+
+        .dpad-btn.pressed {
+            background-color: #00ffcc;
+            color: #121212;
+            box-shadow: 0 0 15px #00ffcc;
+        }
+
+        /* ---- RIGHT SIDE: A/B/C/D DIAMOND LAYOUT ---- */
+        .action-diamond {
+            display: grid;
+            grid-template-columns: repeat(3, calc(40px * var(--scale-factor)));
+            grid-template-rows: repeat(3, calc(40px * var(--scale-factor)));
+            gap: 5px;
+            margin-top: calc(50px * var(--scale-factor));
+        }
+        #A { grid-column: 2; grid-row: 1; }   /* top */
+        #D { grid-column: 1; grid-row: 2; }   /* left */
+        #B { grid-column: 3; grid-row: 2; }   /* right */
+        #C { grid-column: 2; grid-row: 3; }   /* bottom */
+
+        /* ---- CENTER BOTTOM: TWIN JOYSTICKS ---- */
+        .joystick-row {
+            position: absolute;
+            left: 50%;
+            bottom: 18px;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: row;
+            gap: calc(40px * var(--scale-factor));
+        }
+
+        /* GLOBAL BUTTON STYLES */
+        .btn {
+            background-color: #262626;
+            border: 2px solid #3d3d3d;
+            border-radius: 12px;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .action-btn {
+            border-color: #ff007f;
+            color: #ff007f;
+            font-size: 18px;
+            border-radius: 50%;
+        }
+
+        .btn.pressed {
+            background-color: #00ffcc;
+            color: #121212;
+            box-shadow: 0 0 15px #00ffcc;
+        }
+
+        .action-btn.pressed {
+            background-color: #ff007f;
+            color: #121212;
+            box-shadow: 0 0 15px #ff007f;
+        }
+
+        .joystick-zone {
+            width: calc(140px * var(--scale-factor));
+            height: calc(140px * var(--scale-factor));
+            background-color: #262626;
+            border: 2px dashed #3d3d3d;
+            border-radius: 50%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Lightweight custom joystick knob (no external library) */
+        .joystick-knob {
+            position: absolute;
+            left: 25%;
+            top: 25%;
+            width: 50%;
+            height: 50%;
+            border-radius: 50%;
+            background-color: #00ffcc;
+            box-shadow: 0 0 12px rgba(0, 255, 204, 0.5);
+            pointer-events: none;
+            will-change: transform;
+        }
+
+        /* Mobile Landscape Auto-Rotate Scale Correction */
+        @media (max-width: 850px) and (orientation: landscape) {
+            :root { --scale-factor: 0.8; }
+            .controller-panel { padding: 12px; max-width: 760px; }
+            h1 { font-size: 16px; margin: 0 0 5px 0; }
+        }
+
+        @media (max-height: 380px) and (orientation: landscape) {
+            :root { --scale-factor: 0.68; }
+            .controller-panel { padding: 8px; }
+            .joystick-row { bottom: 8px; }
+            h1 { display: none; }
+        }
+
+        /* MOBILE LANDSCAPE ONLY: spread joysticks, push pads down, enlarge buttons */
+        @media (orientation: landscape) and (max-height: 600px) {
+            .joystick-row { gap: calc(160px * var(--scale-factor)); }
+            .dpad-container {
+                margin-top: calc(100px * var(--scale-factor));
+                grid-template-columns: repeat(3, calc(55px * var(--scale-factor)));
+                grid-template-rows: repeat(3, calc(55px * var(--scale-factor)));
+            }
+            .action-diamond {
+                margin-top: calc(100px * var(--scale-factor));
+                grid-template-columns: repeat(3, calc(55px * var(--scale-factor)));
+                grid-template-rows: repeat(3, calc(55px * var(--scale-factor)));
+            }
+            .dpad-btn { font-size: calc(22px * var(--scale-factor)); }
+            .action-btn { font-size: calc(20px * var(--scale-factor)); }
+        }
+
+        /* Portrait fallback */
+        @media (max-width: 500px) and (orientation: portrait) {
+            body { overflow-y: auto; }
+            html, body { height: auto; }
+            .wrapper { height: auto; padding: 20px 0; }
+            .controller-panel {
+                flex-direction: row;
+                height: auto;
+                min-height: 320px;
+                padding: 50px 15px 180px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="wrapper">
+        <h1>Robot Dog Controller</h1>
+
+        <div class="controller-panel">
+
+            <!-- Connection status -->
+            <div id="status" class="status-dot"></div>
+
+            <!-- Take-control: force control back to this joystick -->
+            <div class="btn" id="takeover">TAKE CONTROL</div>
+
+            <!-- Shoulder buttons -->
+            <div class="btn shoulder-btn" id="LB">LB</div>
+            <div class="btn shoulder-btn" id="RB">RB</div>
+
+            <!-- LEFT: plus-shaped D-pad -->
+            <div class="dpad-container">
+                <div class="dpad-btn" id="forward">&#9650;</div>
+                <div class="dpad-btn" id="left">&#9664;</div>
+                <div class="dpad-center"></div>
+                <div class="dpad-btn" id="right">&#9654;</div>
+                <div class="dpad-btn" id="backward">&#9660;</div>
+            </div>
+
+            <!-- RIGHT: A/B/C/D diamond -->
+            <div class="action-diamond">
+                <div class="btn action-btn" id="A">A</div>
+                <div class="btn action-btn" id="D">D</div>
+                <div class="btn action-btn" id="B">B</div>
+                <div class="btn action-btn" id="C">C</div>
+            </div>
+
+            <!-- CENTER BOTTOM: twin joysticks -->
+            <div class="joystick-row">
+                <div id="left-joystick-zone" class="joystick-zone"></div>
+                <div id="right-joystick-zone" class="joystick-zone"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- 0. CONNECTION: native WebSocket, auto-reconnecting ---
+        let ws = null;
+        const statusDot = document.getElementById('status');
+
+        function connect() {
+            ws = new WebSocket(`ws://${location.host}/ws`);
+            ws.onopen  = () => statusDot.classList.add('online');
+            ws.onclose = () => {
+                statusDot.classList.remove('online');
+                setTimeout(connect, 1000);
+            };
+            ws.onerror = () => ws.close();
+        }
+        connect();
+
+        function send(msg) {
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+        }
+
+        // --- HEARTBEAT (deadman): tell the server we're alive ~7x/sec.
+        //     If these stop arriving, the server auto-stops the robot. ---
+        setInterval(() => send({ type: 'heartbeat' }), 150);
+
+        // --- 1. BUTTON INPUT ---
+        const activeButtons = {};
+        const allButtons = ['forward', 'backward', 'left', 'right', 'A', 'B', 'C', 'D', 'LB', 'RB', 'takeover'];
+        const joystickTouchIds = new Set();
+
+        function setButtonState(btnId, isPressed) {
+            if (isPressed === !!activeButtons[btnId]) return;
+            activeButtons[btnId] = isPressed;
+            const el = document.getElementById(btnId);
+            if (el) el.classList.toggle('pressed', isPressed);
+            send({ type: 'button', id: btnId, pressed: isPressed });
+        }
+
+        // --- SAFETY: if the page loses focus / is hidden / is being unloaded
+        //     (screen lock, app switch, tab change), release every button so a
+        //     held direction can't get stuck "on". ---
+        function releaseAll() {
+            allButtons.forEach(id => setButtonState(id, false));
+        }
+        window.addEventListener('blur', releaseAll);
+        window.addEventListener('pagehide', releaseAll);
+        document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
+
+        // A. MOBILE MULTI-TOUCH
+        function handleMobileTouches(e) {
+            e.preventDefault();
+            if (joystickTouchIds.size > 0) {
+                allButtons.forEach(id => setButtonState(id, false));
+                return;
+            }
+            const touched = new Set();
+            for (let i = 0; i < e.touches.length; i++) {
+                const el = document.elementFromPoint(e.touches[i].clientX, e.touches[i].clientY);
+                if (el && allButtons.includes(el.id)) touched.add(el.id);
+            }
+            allButtons.forEach(id => setButtonState(id, touched.has(id)));
+        }
+
+        window.addEventListener('touchstart',  handleMobileTouches, { passive: false });
+        window.addEventListener('touchmove',   handleMobileTouches, { passive: false });
+        window.addEventListener('touchend',    handleMobileTouches, { passive: false });
+        window.addEventListener('touchcancel', handleMobileTouches, { passive: false });
+
+        // B. MOUSE FALLBACK
+        allButtons.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('mousedown',  (e) => { if (e.button === 0) setButtonState(id, true); });
+            el.addEventListener('mouseup',    () => setButtonState(id, false));
+            el.addEventListener('mouseleave', () => setButtonState(id, false));
+        });
+
+        // C. KEYBOARD
+        const keyMap = {
+            'ArrowUp': 'forward',    'w': 'forward',
+            'ArrowDown': 'backward', 's': 'backward',
+            'ArrowLeft': 'left',     'a': 'left',
+            'ArrowRight': 'right',   'd': 'right',
+            '1': 'A', '2': 'B', '3': 'C', '4': 'D',
+            'q': 'LB', 'e': 'RB'
+        };
+        window.addEventListener('keydown', e => { const id = keyMap[e.key]; if (id && !activeButtons[id]) setButtonState(id, true); });
+        window.addEventListener('keyup',   e => { const id = keyMap[e.key]; if (id) setButtonState(id, false); });
+
+        // --- 2. JOYSTICK (custom, no library) ---
+        function createJoystick(zoneId, stick) {
+            const zone = document.getElementById(zoneId);
+            const knob = document.createElement('div');
+            knob.className = 'joystick-knob';
+            zone.appendChild(knob);
+
+            let touchId = null;
+            const coords = { x: 0, y: 0 };
+
+            function update(cx, cy) {
+                const rect = zone.getBoundingClientRect();
+                const radius = rect.width / 2;
+                let dx = cx - (rect.left + radius);
+                let dy = cy - (rect.top + radius);
+                const dist = Math.hypot(dx, dy);
+                const max  = radius * 0.5;
+                if (dist > max) { dx = (dx / dist) * max; dy = (dy / dist) * max; }
+                knob.style.transform = `translate(${dx}px, ${dy}px)`;
+                coords.x = +(dx / max).toFixed(2);
+                coords.y = +(-dy / max).toFixed(2);
+            }
+
+            function begin(id, x, y) {
+                if (touchId !== null) return;
+                touchId = id;
+                joystickTouchIds.add(id);
+                update(x, y);
+                streamInterval = setInterval(() => send({ type: 'joystick', stick, x: coords.x, y: coords.y }), 100);
+            }
+
+            function end() {
+                joystickTouchIds.delete(touchId);
+                touchId = null;
+                clearInterval(streamInterval);
+                coords.x = 0; coords.y = 0;
+                knob.style.transform = 'translate(0, 0)';
+                send({ type: 'joystick', stick, x: 0, y: 0 });
+            }
+
+            let streamInterval = null;
+
+            zone.addEventListener('touchstart', e => {
+                if (touchId !== null) return;
+                for (const t of e.changedTouches) {
+                    if (zone.contains(t.target)) { begin(t.identifier, t.clientX, t.clientY); break; }
+                }
+            }, { passive: false });
+
+            window.addEventListener('touchmove', e => {
+                if (touchId === null) return;
+                for (const t of e.changedTouches) {
+                    if (t.identifier === touchId) { update(t.clientX, t.clientY); break; }
+                }
+            }, { passive: false });
+
+            function onTouchEnd(e) {
+                if (touchId === null) return;
+                for (const t of e.changedTouches) {
+                    if (t.identifier === touchId) { end(); break; }
+                }
+            }
+            window.addEventListener('touchend',    onTouchEnd);
+            window.addEventListener('touchcancel', onTouchEnd);
+
+            zone.addEventListener('mousedown', e => { if (e.button === 0) begin('mouse', e.clientX, e.clientY); });
+            window.addEventListener('mousemove', e => { if (touchId === 'mouse') update(e.clientX, e.clientY); });
+            window.addEventListener('mouseup',   () => { if (touchId === 'mouse') end(); });
+        }
+
+        createJoystick('left-joystick-zone',  'left');
+        createJoystick('right-joystick-zone', 'right');
+    </script>
+</body>
+</html>
