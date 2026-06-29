@@ -171,7 +171,7 @@
             box-shadow: 0 0 15px #00ffcc;
         }
 
-        /* ---- RIGHT SIDE: A/B/C/D DIAMOND LAYOUT ---- */
+        /* ---- RIGHT SIDE: PS4 DIAMOND (△ □ ○ ✕) ---- */
         .action-diamond {
             display: grid;
             grid-template-columns: repeat(3, calc(40px * var(--scale-factor)));
@@ -179,10 +179,22 @@
             gap: 5px;
             margin-top: calc(50px * var(--scale-factor));
         }
-        #A { grid-column: 2; grid-row: 1; }   /* top */
-        #D { grid-column: 1; grid-row: 2; }   /* left */
-        #B { grid-column: 3; grid-row: 2; }   /* right */
-        #C { grid-column: 2; grid-row: 3; }   /* bottom */
+        #A { grid-column: 2; grid-row: 1; }   /* top    = △ Triangle  (connect/disconnect) */
+        #D { grid-column: 1; grid-row: 2; }   /* left   = □ Square    (unused) */
+        #B { grid-column: 3; grid-row: 2; }   /* right  = ○ Circle    (emergency stop) */
+        #C { grid-column: 2; grid-row: 3; }   /* bottom = ✕ Cross     (hop) */
+
+        /* Per-button PS4 colours */
+        #A { border-color: #00c8a0; color: #00c8a0; }
+        #D { border-color: #c060ff; color: #c060ff; }
+        #B { border-color: #ff4466; color: #ff4466; }
+        #C { border-color: #4499ff; color: #4499ff; }
+
+        /* Per-button pressed states */
+        #A.pressed { background-color: #00c8a0; color: #121212; box-shadow: 0 0 15px #00c8a0; }
+        #D.pressed { background-color: #c060ff; color: #121212; box-shadow: 0 0 15px #c060ff; }
+        #B.pressed { background-color: #ff4466; color: #121212; box-shadow: 0 0 15px #ff4466; }
+        #C.pressed { background-color: #4499ff; color: #121212; box-shadow: 0 0 15px #4499ff; }
 
         /* ---- CENTER BOTTOM: TWIN JOYSTICKS ---- */
         .joystick-row {
@@ -248,8 +260,8 @@
             border-radius: 50%;
             background-color: #00ffcc;
             box-shadow: 0 0 12px rgba(0, 255, 204, 0.5);
-            pointer-events: none;
-            will-change: transform;
+            pointer-events: none;          /* touches pass through to the zone */
+            will-change: transform;        /* GPU-composited, cheap to move */
         }
 
         /* Mobile Landscape Auto-Rotate Scale Correction */
@@ -268,7 +280,9 @@
 
         /* MOBILE LANDSCAPE ONLY: spread joysticks, push pads down, enlarge buttons */
         @media (orientation: landscape) and (max-height: 600px) {
+            /* more breathing room between the two sticks */
             .joystick-row { gap: calc(160px * var(--scale-factor)); }
+            /* drop the D-pad and A/B/C/D lower so thumbs clear the sticks */
             .dpad-container {
                 margin-top: calc(100px * var(--scale-factor));
                 grid-template-columns: repeat(3, calc(55px * var(--scale-factor)));
@@ -323,12 +337,12 @@
                 <div class="dpad-btn" id="backward">&#9660;</div>
             </div>
 
-            <!-- RIGHT: A/B/C/D diamond -->
+            <!-- RIGHT: PS4 diamond (△ □ ○ ✕) -->
             <div class="action-diamond">
-                <div class="btn action-btn" id="A">A</div>
-                <div class="btn action-btn" id="D">D</div>
-                <div class="btn action-btn" id="B">B</div>
-                <div class="btn action-btn" id="C">C</div>
+                <div class="btn action-btn" id="A">△</div>
+                <div class="btn action-btn" id="D">□</div>
+                <div class="btn action-btn" id="B">○</div>
+                <div class="btn action-btn" id="C">✕</div>
             </div>
 
             <!-- CENTER BOTTOM: twin joysticks -->
