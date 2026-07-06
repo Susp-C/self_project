@@ -48,18 +48,51 @@
             white-space: nowrap; z-index: 6;
         }
         #takeover.pressed { background-color: #00ffcc; box-shadow: 0 0 14px #00ffcc; }
+        #aiOn {
+            position: absolute; top: 34px; left: 32%; transform: translateX(-50%);
+            padding: 6px 12px; background-color: #00b86b; color: #121212;
+            border: none; border-radius: 10px; font-size: 12px; font-weight: bold;
+            white-space: nowrap; z-index: 6;
+        }
+        #aiOff {
+            position: absolute; top: 34px; left: 68%; transform: translateX(-50%);
+            padding: 6px 12px; background-color: #ff4d4d; color: #121212;
+            border: none; border-radius: 10px; font-size: 12px; font-weight: bold;
+            white-space: nowrap; z-index: 6;
+        }
+        #aiOn.pressed, #aiOff.pressed { box-shadow: 0 0 14px #00ffcc; }
 
         /* Voice button */
+        @keyframes micPulse {
+            0%   { box-shadow: 0 0 0 0 rgba(0,255,204,0.7), 0 0 14px #00ffcc; }
+            70%  { box-shadow: 0 0 0 12px rgba(0,255,204,0), 0 0 20px #00ffcc; }
+            100% { box-shadow: 0 0 0 0 rgba(0,255,204,0), 0 0 14px #00ffcc; }
+        }
+        @keyframes dotBlink {
+            0%, 100% { opacity: 1; } 50% { opacity: 0.2; }
+        }
         #voiceBtn {
             position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
             padding: 6px 16px; background-color: #262626; color: #00ffcc;
             border: 2px solid #00ffcc; border-radius: 10px; font-size: 13px;
             font-weight: bold; white-space: nowrap; z-index: 6; cursor: pointer;
+            transition: transform 0.1s, background-color 0.1s;
+            -webkit-user-select: none; user-select: none;
         }
-        #voiceBtn.pressed { background-color: #00ffcc; color: #121212; box-shadow: 0 0 14px #00ffcc; }
+        #voiceBtn.pressed {
+            background-color: #00ffcc; color: #121212;
+            transform: translateX(-50%) scale(1.08);
+            animation: micPulse 1s ease-out infinite;
+        }
         #voiceText {
             position: absolute; top: 96px; left: 50%; transform: translateX(-50%);
             font-size: 12px; color: #aaa; white-space: nowrap; z-index: 6;
+        }
+        #voiceText .rec-dot {
+            display: inline-block; width: 7px; height: 7px;
+            background: #ff3b3b; border-radius: 50%; margin-right: 4px;
+            vertical-align: middle;
+            animation: dotBlink 0.8s ease-in-out infinite;
         }
 
         .dpad-container {
@@ -142,7 +175,9 @@
         <h1>Robot Dog Controller</h1>
         <div class="controller-panel">
             <div id="status" class="status-dot"></div>
+            <div class="btn" id="aiOn">AI ON</div>
             <div class="btn" id="takeover">TAKE CONTROL</div>
+            <div class="btn" id="aiOff">AI OFF</div>
 
             <!-- Voice input button -->
             <div class="btn" id="voiceBtn">🎤 SPEAK</div>
@@ -179,7 +214,8 @@
         const statusDot = document.getElementById('status');
 
         function connect() {
-            ws = new WebSocket(`ws://${location.host}/ws`);
+            const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+            ws = new WebSocket(`${proto}://${location.host}/ws`);
             ws.onopen  = () => statusDot.classList.add('online');
             ws.onclose = () => { statusDot.classList.remove('online'); setTimeout(connect, 1000); };
             ws.onerror = () => ws.close();
@@ -195,7 +231,8 @@
 
         // --- 1. BUTTON INPUT ---
         const activeButtons = {};
-        const allButtons = ['forward','backward','left','right','A','B','C','D','LB','RB','takeover'];
+        const allButtons = ['forward','backward','left','right','A','B','C','D','LB','RB','takeover','aiOn','aiOff'];
+        const buttonIdMap = { aiOn: 'ai_on', aiOff: 'ai_off' };
         const joystickTouchIds = new Set();
 
         function setButtonState(btnId, isPressed) {
@@ -203,7 +240,8 @@
             activeButtons[btnId] = isPressed;
             const el = document.getElementById(btnId);
             if (el) el.classList.toggle('pressed', isPressed);
-            send({ type: 'button', id: btnId, pressed: isPressed });
+            const sendId = buttonIdMap[btnId] || btnId;
+            send({ type: 'button', id: sendId, pressed: isPressed });
         }
 
         function releaseAll() { allButtons.forEach(id => setButtonState(id, false)); }
@@ -258,24 +296,65 @@
         if (SR) {
             recog = new SR();
             recog.lang = 'en-US';
-            recog.continuous = false;
+            recog.continuous = true;    // keep listening while button is held
             recog.interimResults = false;
 
             recog.onresult = (e) => {
-                const text = e.results[0][0].transcript.trim().toLowerCase();
-                voiceText.textContent = 'heard: ' + text;
-                // pick the first keyword contained in the phrase
+                // continuous mode: grab the latest result
+                const text = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
+                voiceText.innerHTML = 'heard: <b style="color:#00ffcc">' + text + '</b>';
                 for (const k of VOICE_KEYWORDS) {
                     if (text.includes(k)) { send({ type: 'voice', text: k }); break; }
                 }
             };
-            recog.onend   = () => voiceBtn.classList.remove('pressed');
-            recog.onerror = (e) => { voiceText.textContent = 'voice error: ' + e.error; voiceBtn.classList.remove('pressed'); };
+            recog.onend = () => {
+                voiceBtn.classList.remove('pressed');
+                voiceBtn.textContent = '🎤 HOLD TO SPEAK';
+            };
+            recog.onerror = (e) => {
+                voiceText.textContent = 'voice error: ' + e.error;
+                voiceBtn.classList.remove('pressed');
+                voiceBtn.textContent = '🎤 HOLD TO SPEAK';
+            };
 
-            voiceBtn.addEventListener('click', () => {
-                try { recog.start(); voiceBtn.classList.add('pressed'); voiceText.textContent = 'listening...'; }
-                catch (err) { /* already started */ }
-            });
+            voiceBtn.textContent = '🎤 HOLD TO SPEAK';
+
+            function startVoice() {
+                try {
+                    recog.start();
+                    voiceBtn.classList.add('pressed');
+                    voiceBtn.textContent = '🔴 LISTENING...';
+                    voiceText.innerHTML = '<span class="rec-dot"></span>hold & speak a command';
+                } catch (err) { /* already started */ }
+            }
+            function stopVoice() {
+                try { recog.stop(); } catch (err) {}
+            }
+
+            // Hold to talk: press = start listening, release = stop
+            voiceBtn.addEventListener('touchstart', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                startVoice();
+            }, { passive: false });
+            voiceBtn.addEventListener('touchend', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                stopVoice();
+            }, { passive: false });
+            voiceBtn.addEventListener('touchcancel', (e) => {
+                e.stopPropagation();
+                try { recog.abort(); } catch (err) {}
+                voiceBtn.classList.remove('pressed');
+                voiceBtn.textContent = '🎤 HOLD TO SPEAK';
+                voiceText.textContent = '';
+            }, { passive: false });
+
+            // Desktop fallback
+            voiceBtn.addEventListener('mousedown', startVoice);
+            voiceBtn.addEventListener('mouseup',   stopVoice);
+            voiceBtn.addEventListener('mouseleave', stopVoice);
+
         } else {
             voiceBtn.style.display = 'none';
             voiceText.textContent = 'voice not supported on this browser';

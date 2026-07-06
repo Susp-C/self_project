@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """
-voice_control.py — shared MOVEMENT LAYER used by online_joystick.py
-(web joystick + phone-side Web Speech API voice control).
-Publishes sensor_msgs/Joy on /joy_human via rosbridge.
+vioce_control.py — shared MOVEMENT LAYER for online_joystick.py and listen.py
 """
-
 
 import time
 import threading
@@ -23,10 +20,12 @@ NUM_AXES, NUM_BUTTONS = 8, 12
 
 WATCHDOG_TIMEOUT = 0.5
 
-TROT_DRIFT_BIAS = 0.1
+TROT_DRIFT_BIAS = 0.0     # was 0.1 forward — caused front drift
 KEEPALIVE_AXIS  = 6
-KEEPALIVE_VAL   = 0.20
-TROT_YAW_BIAS   = 0.05
+KEEPALIVE_VAL   = 0.0     # was 0.20 on axes[6] (roll) — caused left drift
+TROT_YAW_BIAS   = 0.0
+
+MOVE_SCALE = 0.6          # global speed cap for D-pad and joystick (0.0–1.0)
 
 # axes[5] = body height (integrated rate); negative raises, positive lowers
 HEIGHT_AXIS = 5
@@ -157,22 +156,22 @@ def toggle_trot():
 
 def forward():
     print(">>> ROBOT: MOVING FORWARD")
-    _set_axis(1, 1.0)
+    _set_axis(1, MOVE_SCALE)
 
 
 def backward():
     print(">>> ROBOT: MOVING BACKWARD")
-    _set_axis(1, -1.0)
+    _set_axis(1, -MOVE_SCALE)
 
 
 def left():
     print(">>> ROBOT: TURNING LEFT")
-    _set_axis(3, 1.0)
+    _set_axis(3, MOVE_SCALE)
 
 
 def right():
     print(">>> ROBOT: TURNING RIGHT")
-    _set_axis(3, -1.0)
+    _set_axis(3, -MOVE_SCALE)
 
 
 def set_stick(stick, x, y):
@@ -183,11 +182,11 @@ def set_stick(stick, x, y):
     disturbs trot state. Translation (left stick) needs trot mode to move."""
     with _lock:
         if stick == "left":
-            _axes[0] = -x    # strafe  (flip sign if it strafes the wrong way)
-            _axes[1] = y     # forward/back (matches d-pad forward = +)
+            _axes[0] = -x * MOVE_SCALE
+            _axes[1] = y * MOVE_SCALE
         elif stick == "right":
-            _axes[3] = -x    # yaw/turn (matches d-pad left = +axes[3])
-            _axes[4] = y     # pitch   (flip sign if it tilts the wrong way)
+            _axes[3] = -x * MOVE_SCALE
+            _axes[4] = y * MOVE_SCALE
 
 
 def hop():
@@ -220,24 +219,6 @@ def stop():
 
 def take_control():
     print(">>> JOYSTICK: taking control back (override OFF)")
-    ai_off()
+    if _enable_topic is not None:
+        _enable_topic.publish(roslibpy.Message({"data": False}))
     stop()
-
-
-def set_ai_enable(enabled):
-    state = bool(enabled)
-    print(f">>> AI CAMERA: {'ON' if state else 'OFF'}")
-    if _enable_topic is None:
-        return
-    try:
-        _enable_topic.publish(roslibpy.Message({"data": state}))
-    except Exception as e:
-        print(f"[robot_control] enable publish error: {e}")
-
-
-def ai_on():
-    set_ai_enable(True)
-
-
-def ai_off():
-    set_ai_enable(False)

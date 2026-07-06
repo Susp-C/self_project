@@ -57,9 +57,13 @@ GESTURE_HOLD_SEC = 1.0
 LOST_TIMEOUT_SEC = 1.5
 MODE_SWITCH_COOLDOWN = 1.2
 
-TARGET_BBOX_RATIO = 0.35
+# FOLLOW distance control uses a band instead of a single point target.
+# If the person's bounding box ratio is below the lower bound, move forward.
+# If it is above the upper bound, move backward.
+FOLLOW_BBOX_RATIO_LOW = 0.55
+FOLLOW_BBOX_RATIO_HIGH = 0.75
 DEAD_ZONE_X = 0.10
-DEAD_ZONE_D = 0.05
+FOLLOW_FWD_GAIN = 2.0
 
 TRAIL_LEN = 80
 WRIST_EMA = 0.55
@@ -383,6 +387,7 @@ class RosBridge:
         self.cmd_topic = None
         self.mode_topic = None
         self.enable_topic = None
+        self.enable_pub_topic = None
         self._lock = threading.Lock()
         self._last_pub_t = 0.0
         self._stopping = False
@@ -406,7 +411,10 @@ class RosBridge:
                 self.client, "/ai_camera/mode", "std_msgs/String")
             self.enable_topic = roslibpy.Topic(
                 self.client, "/ai_camera/enable", "std_msgs/Bool")
+            self.enable_pub_topic = roslibpy.Topic(
+                self.client, "/ai_camera/enable", "std_msgs/Bool")
             self.enable_topic.subscribe(self._on_enable)
+            self._publish_enable_state(share["ros_enabled"])
             print(f"[ros] connected to ws://{self.host}:{self.port}")
         except Exception as e:
             print(f"[ros] connect failed: {e}")
@@ -422,6 +430,24 @@ class RosBridge:
         with share_lock:
             share["ros_enabled"] = bool(msg["data"])
         print(f"[ros] enable={share['ros_enabled']}")
+
+    def _publish_enable_state(self, enabled):
+        if not self.is_connected or self.enable_pub_topic is None:
+            return
+        message = roslibpy.Message({"data": bool(enabled)})
+        for _ in range(3):
+            try:
+                self.enable_pub_topic.publish(message)
+            except Exception as e:
+                print(f"[ros] enable publish error: {e}")
+                return
+            time.sleep(0.05)
+
+    def set_enable(self, enabled):
+        enabled = bool(enabled)
+        with share_lock:
+            share["ros_enabled"] = enabled
+        self._publish_enable_state(enabled)
 
     @property
     def is_connected(self):
@@ -527,7 +553,7 @@ def vision_loop():
     while True:
         raw = picam2.capture_array()
         # Picamera2 RGB888 already returns RGB ordering
-        rgb = raw
+        rgb = cv2.flip(raw, -1)
 
         if frame_idx % POSE_EVERY_N_FRAMES == 0:
             detections_cache = detector.detect(rgb)
@@ -603,9 +629,19 @@ def vision_loop():
                 bh = max(1, y2 - y1)
                 err_x = (cx - W / 2) / (W / 2)
                 ratio = bh / H
-                err_d = TARGET_BBOX_RATIO - ratio
                 yaw = -1.0 * err_x if abs(err_x) > DEAD_ZONE_X else 0.0
-                fwd = 2.0 * err_d if abs(err_d) > DEAD_ZONE_D else 0.0
+                if ratio < FOLLOW_BBOX_RATIO_LOW:
+                    fwd = clamp(
+                        FOLLOW_FWD_GAIN * (FOLLOW_BBOX_RATIO_LOW - ratio),
+                        0.0, 0.5,
+                    )
+                elif ratio > FOLLOW_BBOX_RATIO_HIGH:
+                    fwd = clamp(
+                        -FOLLOW_FWD_GAIN * (ratio - FOLLOW_BBOX_RATIO_HIGH),
+                        -0.4, 0.0,
+                    )
+                else:
+                    fwd = 0.0
                 cmd["yaw"] = clamp(yaw, -0.6, 0.6)
                 cmd["fwd"] = clamp(fwd, -0.4, 0.5)
 
@@ -806,15 +842,21 @@ def stat():
 
 @app.route("/ai/on")
 def ai_on():
-    with share_lock:
-        share["ros_enabled"] = True
+    if _ros_singleton is not None:
+        _ros_singleton.set_enable(True)
+    else:
+        with share_lock:
+            share["ros_enabled"] = True
     return "AI ON"
 
 
 @app.route("/ai/off")
 def ai_off():
-    with share_lock:
-        share["ros_enabled"] = False
+    if _ros_singleton is not None:
+        _ros_singleton.set_enable(False)
+    else:
+        with share_lock:
+            share["ros_enabled"] = False
     return "AI OFF"
 
 
