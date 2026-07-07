@@ -169,21 +169,24 @@ class AIBridge:
                 self.joy_pub.publish(self._make_joy())
             return
 
-        # Engage trot the first time we have a real AI command.
-        if not self.trot_active and now > self.next_trot_toggle:
-            self._trot_toggle_pulse()
-            self.trot_active = True
-            return
-
+        # Engage trot only for FOLLOW. DANCE should stay in REST so it does not walk.
+        if self.mode == "FOLLOW":
+            if not self.trot_active and now > self.next_trot_toggle:
+                self._trot_toggle_pulse()
+                self.trot_active = True
+                return
+        else:
+            # DANCE / other non-walking modes should not use trot.
+            self.trot_active = False
         # Normal AI command -> Joy
         fwd = self.clamp(self.cur_cmd.linear.x / self.max_x, -1.0, 1.0)
         yaw = self.clamp(self.cur_cmd.angular.z / self.max_yaw, -1.0, 1.0)
 
         if self.mode == "DANCE":
-            yaw_d = self.clamp(self.cur_cmd.angular.x, -0.6, 0.6)
-            lat = self.clamp(self.cur_cmd.angular.y * 0.5, -0.6, 0.6)
+            head_yaw = self.clamp(self.cur_cmd.angular.x, -0.6, 0.6)
+            body_wiggle = self.clamp(self.cur_cmd.angular.y * 0.5, -0.6, 0.6)
             self.joy_pub.publish(self._make_joy(
-                axes_dict={AX_LY: 0.0, AX_LX: lat, AX_RX: yaw_d}))
+                axes_dict={AX_LY: 0.0, AX_LX: 0.0, AX_RX: head_yaw, AX_RY: body_wiggle,}))
         else:  # FOLLOW or others
             self.joy_pub.publish(self._make_joy(
                 axes_dict={AX_LY: fwd, AX_RX: yaw}))
