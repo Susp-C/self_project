@@ -3,17 +3,28 @@
 AI <-> Joystick arbitration bridge.
 
 - Subscribes:
-    /joy_human         sensor_msgs/Joy   (real joystick, remapped)
-    /ai_camera/cmd     geometry_msgs/Twist
-    /ai_camera/mode    std_msgs/String
-    /ai_camera/enable  std_msgs/Bool
+    /joy_human          sensor_msgs/Joy     (real joystick, remapped)
+    /ai_camera/cmd      geometry_msgs/Twist
+    /ai_camera/mode     std_msgs/String
+    /ai_camera/enable   std_msgs/Bool
 - Publishes:
-    /joy               sensor_msgs/Joy   (single source for dingo_driver)
-    /ai_camera/enable  std_msgs/Bool     (latched, reflects current AI state)
+    /joy                sensor_msgs/Joy     (single source for dingo_driver)
+    /ai_camera/enable   std_msgs/Bool       (latched, reflects current AI state)
 
 Priority: joystick > AI. If any joystick axis exceeds threshold OR any button
 is pressed within the last `joy_active_hold` seconds, joystick passthrough is
 used and AI is suppressed. Otherwise AI takes over (trot toggle + cmd).
+
+Mode behaviour:
+    FOLLOW : auto-enter TROT, walk toward the tracked person.
+    DANCE  : stay in REST, left stick forced to 0, only right stick axes
+             (head_yaw / body_wiggle) are used for in-place head/body motion.
+    IDLE   : all AI output zeroed, drop out of TROT back to REST.
+
+Key fix: whenever the mode changes, and before toggling TROT, a neutral
+(all-zero) Joy frame is published first, so leftover posture/gaze offset from
+DANCE does not get carried into the next mode (which previously left the legs
+off-center when starting to run).
 """
 
 import rospy
@@ -26,7 +37,6 @@ AX_LX, AX_LY = 0, 1
 AX_RX, AX_RY = 3, 4
 AX_DPADX, AX_DPADY = 6, 7
 BTN_X, BTN_L1, BTN_R1 = 0, 4, 5
-
 N_AXES, N_BUTTONS = 8, 11
 
 
@@ -34,11 +44,11 @@ class AIBridge:
     def __init__(self):
         rospy.init_node("dingo_ai_bridge")
 
-        self.enabled         = rospy.get_param("~enabled", True)
-        self.max_x           = rospy.get_param("~max_x", 0.4)
-        self.max_y           = rospy.get_param("~max_y", 0.3)
-        self.max_yaw         = rospy.get_param("~max_yaw", 1.0)
-        self.cmd_rate        = rospy.get_param("~cmd_rate", 30.0)
+        self.enabled = rospy.get_param("~enabled", True)
+        self.max_x = rospy.get_param("~max_x", 0.4)
+        self.max_y = rospy.get_param("~max_y", 0.3)
+        self.max_yaw = rospy.get_param("~max_yaw", 1.0)
+        self.cmd_rate = rospy.get_param("~cmd_rate", 30.0)
         self.joy_axis_thresh = rospy.get_param("~joy_axis_thresh", 0.15)
         self.joy_active_hold = rospy.get_param("~joy_active_hold", 1.5)
 
@@ -51,6 +61,7 @@ class AIBridge:
 
         self.trot_active = False
         self.next_trot_toggle = rospy.Time.now()
+
         self.last_announced_enable = None
 
         self.joy_pub = rospy.Publisher("/joy", Joy, queue_size=4)
@@ -64,6 +75,7 @@ class AIBridge:
         rospy.Subscriber("/ai_camera/enable", Bool, self.on_enable)
 
         rospy.Timer(rospy.Duration(1.0 / self.cmd_rate), self.tick)
+
         rospy.loginfo(
             "[ai_bridge] up, AI enabled=%s, joy threshold=%.2f, hold=%.1fs",
             self.enabled, self.joy_axis_thresh, self.joy_active_hold,
@@ -80,12 +92,18 @@ class AIBridge:
         self.cur_cmd = msg
 
     def on_mode(self, msg):
-        self.mode = msg.data
+        new_mode = msg.data
+        if new_mode != self.mode:
+            rospy.loginfo("[ai_bridge] mode %s -> %s", self.mode, new_mode)
+            # Publish one neutral frame on any mode change so leftover
+            # posture/gaze offset from the previous mode (especially DANCE
+            # right-stick posture) is cleared before the new mode starts.
+            self.joy_pub.publish(self._make_joy())
+            self.cur_cmd = Twist()
+        self.mode = new_mode
 
     def on_enable(self, msg):
         # Allow external (e.g. webpage) to flip AI master switch.
-        # We only honor the change if it disagrees with our last announce,
-        # to avoid feedback loops with our own latched publish.
         new_val = bool(msg.data)
         if new_val != self.enabled:
             self.enabled = new_val
@@ -125,7 +143,12 @@ class AIBridge:
         return max(lo, min(hi, v))
 
     def _trot_toggle_pulse(self):
-        """Send a press/release of R1 to toggle trot gait."""
+        """Reset posture first, then send a press/release of R1 to toggle trot."""
+        # Neutral frame first: make sure no posture/gaze offset is present
+        # when we switch gait, so the legs return to zero position.
+        self.joy_pub.publish(self._make_joy())
+        rospy.sleep(0.05)
+        # Toggle trot gait with R1.
         self.joy_pub.publish(self._make_joy(btn_dict={BTN_R1: 1}))
         rospy.sleep(0.05)
         self.joy_pub.publish(self._make_joy(btn_dict={BTN_R1: 0}))
@@ -134,10 +157,11 @@ class AIBridge:
     # ---------- main loop ----------
     def tick(self, _evt):
         now = rospy.Time.now()
+
         joy_active = (
             self.last_human_joy is not None
             and (now - self.last_human_active_t).to_sec()
-                < self.joy_active_hold
+            < self.joy_active_hold
         )
 
         # --- Joystick has priority ---
@@ -152,7 +176,6 @@ class AIBridge:
 
         # --- Joystick idle: re-enable AI if user wants it ---
         self._publish_enable(self.enabled)
-
         if not self.enabled:
             self.joy_pub.publish(self._make_joy())
             self.trot_active = False
@@ -160,8 +183,8 @@ class AIBridge:
 
         stale = (now - self.last_cmd_t).to_sec() > 0.5
 
+        # --- IDLE / stale: zero everything and drop out of trot ---
         if self.mode == "IDLE" or stale:
-            # Drop out of trot if we were in it.
             if self.trot_active and now > self.next_trot_toggle:
                 self._trot_toggle_pulse()
                 self.trot_active = False
@@ -169,24 +192,35 @@ class AIBridge:
                 self.joy_pub.publish(self._make_joy())
             return
 
-        # Engage trot only for FOLLOW. DANCE should stay in REST so it does not walk.
+        # --- Gait management: only FOLLOW walks (TROT); others stay REST ---
         if self.mode == "FOLLOW":
             if not self.trot_active and now > self.next_trot_toggle:
                 self._trot_toggle_pulse()
                 self.trot_active = True
                 return
         else:
-            # DANCE / other non-walking modes should not use trot.
-            self.trot_active = False
-        # Normal AI command -> Joy
+            # DANCE and any non-FOLLOW active mode must stay in REST.
+            if self.trot_active and now > self.next_trot_toggle:
+                self._trot_toggle_pulse()
+                self.trot_active = False
+                return
+
+        # --- Normal AI command -> Joy ---
         fwd = self.clamp(self.cur_cmd.linear.x / self.max_x, -1.0, 1.0)
         yaw = self.clamp(self.cur_cmd.angular.z / self.max_yaw, -1.0, 1.0)
 
         if self.mode == "DANCE":
+            # DANCE: no translation at all. Left stick forced to zero.
+            # Only right stick axes drive in-place head/body motion.
             head_yaw = self.clamp(self.cur_cmd.angular.x, -0.6, 0.6)
-            body_wiggle = self.clamp(self.cur_cmd.angular.y * 0.5, -0.6, 0.6)
+            body_wiggle = self.clamp(self.cur_cmd.angular.y, -0.6, 0.6)
             self.joy_pub.publish(self._make_joy(
-                axes_dict={AX_LY: 0.0, AX_LX: 0.0, AX_RX: head_yaw, AX_RY: body_wiggle,}))
+                axes_dict={
+                    AX_LX: 0.0,          # force no strafing
+                    AX_LY: 0.0,          # force no forward/backward
+                    AX_RX: head_yaw,     # head yaw (right stick horizontal)
+                    AX_RY: body_wiggle,  # body wiggle (right stick vertical)
+                }))
         else:  # FOLLOW or others
             self.joy_pub.publish(self._make_joy(
                 axes_dict={AX_LY: fwd, AX_RX: yaw}))

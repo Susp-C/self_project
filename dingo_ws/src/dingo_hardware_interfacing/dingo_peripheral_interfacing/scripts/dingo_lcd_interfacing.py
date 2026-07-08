@@ -68,10 +68,10 @@ class DingoDisplayNode:
             Font3 = ImageFont.truetype("/usr/share/fonts/truetype/Font02.ttf", 120)
 
             # draw.text((60, -15), 'Dingo', fill="RED", font=Font3)
-            draw.text((20, 110), 'SSID: '+ self.ssid, fill="WHITE", font=Font1)
-            draw.text((20, 135), 'IP: ' + self.ipAddress, fill="WHITE", font=Font1)
+            draw.text((10, 110), 'SSID: '+ self.ssid, fill="WHITE", font=Font1)
+            draw.text((10, 135), 'IP: ' + self.ipAddress, fill="WHITE", font=Font1)
             current_time = time.strftime("%I:%M:%S%p")
-            draw.text((220, 0), current_time, fill="WHITE", font=Font1_small)
+            draw.text((180, 0), current_time, fill="WHITE", font=Font1_small)
 
             ## Battery indication bar
             black= Image.new("RGB", (320, 172), "black")
@@ -98,7 +98,14 @@ class DingoDisplayNode:
             #rospy.loginfo("Drawing...")
             image1 = image1.rotate(0)
             image1 = image1.transpose(Image.ROTATE_270)
-            self.disp.ShowImage(image1)
+            SHIFT_LEFT = 0  # pixels; increase this value if you want more left shift
+            SHIFT_UP = 0
+
+
+            shifted = Image.new("RGB", image1.size, "black")
+            shifted.paste(image1, (-SHIFT_LEFT, -SHIFT_UP))
+
+            self.disp.ShowImage(shifted)
 
             ## SSID and IP are calcultated after displaying so that they can run on the second loop
             #rospy.loginfo("Connecting to Wi-Fi...")
