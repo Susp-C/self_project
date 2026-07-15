@@ -9,19 +9,11 @@ AI <-> Joystick arbitration bridge.
     /ai_camera/enable   std_msgs/Bool
 - Publishes:
     /joy                sensor_msgs/Joy     (single source for dingo_driver)
+    /ai_camera/enable   std_msgs/Bool       (latched, reflects current AI state)
 
 Priority: joystick > AI. If any joystick axis exceeds threshold OR any button
 is pressed within the last `joy_active_hold` seconds, joystick passthrough is
 used and AI is suppressed. Otherwise AI takes over (trot toggle + cmd).
-
-Note: this node only SUBSCRIBES to /ai_camera/enable, it never publishes to
-it. It used to also publish there to "announce" that joystick was overriding
-AI -- but since it was also subscribed to that same topic, its own broadcast
-fed straight back into itself, latching AI permanently off after any joystick
-touch (this is what broke DANCE after the first use, and desynced the
-enable state everyone else reads). /ai_camera/enable is now a one-way control
-channel: only external actors (the phone controller, the gesture debug page)
-write to it.
 
 Mode behaviour:
     FOLLOW    : auto-enter TROT, walk toward the tracked person.
@@ -83,7 +75,12 @@ class AIBridge:
         self.trot_active = False
         self.next_trot_toggle = rospy.Time.now()
 
+        self.last_announced_enable = None
+
         self.joy_pub = rospy.Publisher("/joy", Joy, queue_size=4)
+        self.enable_pub = rospy.Publisher(
+            "/ai_camera/enable", Bool, queue_size=1, latch=True)
+        self._publish_enable(self.enabled)
 
         rospy.Subscriber("/joy_human", Joy, self.on_joy_human)
         rospy.Subscriber("/ai_camera/cmd", Twist, self.on_cmd)
@@ -126,6 +123,12 @@ class AIBridge:
             rospy.loginfo("[ai_bridge] AI enabled -> %s", self.enabled)
 
     # ---------- helpers ----------
+    def _publish_enable(self, val):
+        if self.last_announced_enable == val:
+            return
+        self.enable_pub.publish(Bool(data=bool(val)))
+        self.last_announced_enable = val
+
     def _joy_is_active(self, msg):
         for a in msg.axes:
             if abs(a) > self.joy_axis_thresh:
@@ -176,28 +179,18 @@ class AIBridge:
 
         # --- Joystick has priority ---
         if joy_active:
-            # Human is taking over. If AI (FOLLOW) had put the robot into
-            # TROT, force it back to REST first -- same pattern as the
-            # IDLE/stale case below -- so the physical gait matches what the
-            # joystick side assumes (REST). Without this, the real robot
-            # keeps walking-gait after handoff while voice_control.py still
-            # thinks it's in REST, so "forward" raises/lowers height instead
-            # of walking. This was the "AI off breaks the controller" bug.
-            if self.trot_active:
-                self._trot_toggle_pulse()
-            else:
-                self.joy_pub.publish(self.last_human_joy)
+            # Pass joystick through verbatim.
+            self.joy_pub.publish(self.last_human_joy)
+            # Tell AI side we are overridden, so vision stops sending cmds.
+            self._publish_enable(False)
+            # Reset trot bookkeeping; human is in charge of gait now.
             self.trot_active = False
             return
 
         # --- Joystick idle: re-enable AI if user wants it ---
+        self._publish_enable(self.enabled)
         if not self.enabled:
-            # Same handoff fix as above: don't just forget we were in trot,
-            # actually tell the robot to leave it.
-            if self.trot_active:
-                self._trot_toggle_pulse()
-            else:
-                self.joy_pub.publish(self._make_joy())
+            self.joy_pub.publish(self._make_joy())
             self.trot_active = False
             return
 

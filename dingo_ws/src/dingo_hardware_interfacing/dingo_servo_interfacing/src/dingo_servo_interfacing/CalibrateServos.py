@@ -92,9 +92,9 @@ else:
                 #  2  [front_right_lower, front_left_lower, back_right_lower, back_left_lower]] """
 
 offsets = np.array(
-                    [[80, 115, 111,73],
-                    [90, 8, 63, 15],
-                    [2, 0, 8, 5]])
+                    [[62, 120, 148, 73],
+                    [65, 18, 30, 10],
+                    [0, 0, 5, -5]])
 
 
 servo_name = ""
@@ -147,5 +147,4 @@ if servo_name == "relax":
 # Dingo.moveAbsAngle(Dingo.back_left_hip    ,offsets[0,3]+pos[0])
 # Dingo.moveAbsAngle(Dingo.back_left_upper  ,offsets[1,3]+pos[1])
 # Dingo.moveAbsAngle(Dingo.back_left_lower  ,offsets[2,3]+pos[2])
-
 

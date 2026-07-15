@@ -11,10 +11,10 @@ import voice_control as robot
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# ====================== VOICE STATE MACHINE ======================
+# ====================== VOICE COMMANDS ======================
 # Voice input comes from the phone browser (Web Speech API),
 # sent over WebSocket as {"type": "voice", "text": "<keyword>"}.
-_voice_awake = False
+# No wake word — every recognized keyword fires immediately.
 
 VOICE_KEYWORDS = (
     "hello", "forward", "backward", "left", "right",
@@ -24,7 +24,6 @@ VOICE_KEYWORDS = (
 
 def on_voice(word):
     """Handle a single recognized keyword coming from the phone."""
-    global _voice_awake
     word = (word or "").strip().lower()
     if not word:
         return
@@ -33,14 +32,6 @@ def on_voice(word):
     # voice commands also keep the deadman watchdog alive
     robot.feed_watchdog()
 
-    # --- not awake yet: only 'hello' wakes the robot ---
-    if not _voice_awake:
-        if word == "hello":
-            _voice_awake = True
-            print("[voice] awake — listening for movement commands")
-        return
-
-    # --- awake: handle commands ---
     if word == "hello":
         return
 
@@ -53,7 +44,7 @@ def on_voice(word):
         robot.halt()      # hold at new height
 
     elif word in ("forward", "backward", "left", "right"):
-        # FIX: use robot.is_trot_active() as ground truth instead of a local
+        # use robot.is_trot_active() as ground truth instead of a local
         # flag — prevents desync when the watchdog or a reconnect clears trot
         # without this module knowing about it.
         if not robot.is_trot_active():
@@ -61,17 +52,10 @@ def on_voice(word):
             time.sleep(0.3)
         getattr(robot, word)()    # robot.forward() / backward() / left() / right()
 
-    elif word == "stop":
+    elif word in ("stop", "quit"):
         if robot.is_trot_active():
             robot.toggle_trot()
         robot.stop()
-
-    elif word == "quit":
-        if robot.is_trot_active():
-            robot.toggle_trot()
-        robot.stop()
-        _voice_awake = False
-        print("[voice] sleeping. Say 'hello' to reactivate.")
 
 
 # ====================== BUTTON / JOYSTICK ======================
@@ -100,7 +84,7 @@ def on_button(button, pressed):
     elif button == "RB" and pressed:
         robot.toggle_trot()
     elif button == "B" and pressed:
-        robot.stop()
+        robot.take_control()
     elif button == "C" and pressed:
         robot.hop()
     elif button == "takeover" and pressed:
@@ -109,6 +93,12 @@ def on_button(button, pressed):
         robot.ai_on()
     elif button == "ai_off" and pressed:
         robot.ai_off()
+    elif button == "follow" and pressed:
+        robot.set_ai_mode("FOLLOW")
+    elif button == "dance" and pressed:
+        robot.set_ai_mode("DANCE")
+    elif button == "line" and pressed:
+        robot.trigger_line_capture()
     else:
         print(f"Button {button} {'pressed' if pressed else 'released'}")
 
@@ -141,11 +131,40 @@ async def favicon(request):
     return web.Response(status=204)
 
 
+async def send_state(ws):
+    try:
+        await ws.send_json({"type": "state", **robot.get_state()})
+    except Exception:
+        pass
+
+
+_current_ws = None
+
+
 async def websocket(request):
+    global _current_ws
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     loop = asyncio.get_event_loop()
+
+    # Only one controller may drive the robot at a time. A stale/zombie
+    # connection (e.g. a phone WiFi blip the server hasn't detected as
+    # closed yet) must not be left mutating shared arm/trot state at the
+    # same time as a fresh connection — that's what was causing the light
+    # to show one state while the robot was actually in another.
+    old_ws = _current_ws
+    _current_ws = ws
+    if old_ws is not None and not old_ws.closed:
+        try:
+            await old_ws.close()
+        except Exception:
+            pass
+
     print("Controller connected.")
+    # every new connection starts from a known, safe baseline — never trust
+    # whatever state a previous session (or the boot-time auto-arm) left
+    await loop.run_in_executor(None, robot.force_disarm)
+    await send_state(ws)
     try:
         async for msg in ws:
             if msg.type == web.WSMsgType.TEXT:
@@ -153,13 +172,23 @@ async def websocket(request):
                     data = json.loads(msg.data)
                 except (ValueError, TypeError):
                     continue
+                # Feed the watchdog the instant any message arrives, before
+                # dispatching — arm/trot toggles block for ~0.4s, and
+                # heartbeats queue up behind them on the same connection,
+                # which could otherwise starve the watchdog and make it
+                # trip mid-toggle (this is what caused trot to silently
+                # reset back off during a legitimate toggle).
+                robot.feed_watchdog()
                 if data.get("type") == "heartbeat":
-                    robot.feed_watchdog()
                     continue
                 await loop.run_in_executor(None, handle_message, data)
+                if data.get("type") in ("button", "voice"):
+                    await send_state(ws)
             elif msg.type == web.WSMsgType.ERROR:
                 break
     finally:
+        if _current_ws is ws:
+            _current_ws = None
         # FIX: halt() zeroes motion axes without clearing trot state, so a
         # phone reconnect (or brief network hiccup) doesn't kill a voice-
         # initiated trot that is still supposed to be running.

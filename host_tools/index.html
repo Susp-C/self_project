@@ -3,208 +3,185 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Robot Dog Controller</title>
+    <title>Dingo Controller</title>
     <style>
-        :root { --scale-factor: 1; }
+        :root { --sf: 1; --cyan: #00e0c6; --pink: #ff2d78; --red: #ff3b46; }
         html, body {
-            background-color: #121212; color: #fff;
+            background-color: #0c0e10; color: #fff;
             font-family: 'Arial', sans-serif;
             margin: 0; padding: 0; width: 100vw; height: 100vh; height: 100dvh;
-            display: flex; align-items: center; justify-content: center;
-            overflow: hidden; user-select: none; touch-action: none;
+            overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: none;
         }
-        .wrapper {
-            display: flex; flex-direction: column; align-items: center;
-            justify-content: center; width: 100%; height: 100%;
-            padding: 10px; box-sizing: border-box;
+        .panel { position: relative; width: 100%; height: 100%; box-sizing: border-box; }
+        .glow {
+            position: absolute; inset: 0; pointer-events: none;
+            background: radial-gradient(120% 90% at 50% 122%, rgba(0,224,198,0.10), transparent 60%);
         }
-        h1 { color: #00ffcc; margin: 0 0 10px 0; font-size: 20px; text-align: center; flex-shrink: 0; }
-        .controller-panel {
-            position: relative; display: flex; flex-direction: row;
-            justify-content: space-between; align-items: flex-start;
-            width: 100%; max-width: 980px;
-            height: calc(360px * var(--scale-factor));
-            padding: 20px; background-color: #1a1a1a; border-radius: 24px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5); box-sizing: border-box;
+        .horizon {
+            position: absolute; left: 0; right: 0; height: 1px; pointer-events: none;
+            background: linear-gradient(90deg, transparent, rgba(0,224,198,0.22), transparent);
         }
-        .shoulder-btn {
-            position: absolute; top: 14px;
-            width: calc(90px * var(--scale-factor));
-            height: calc(38px * var(--scale-factor));
-            border-radius: 10px; font-size: 16px; z-index: 5;
+
+        /* ---------- TOP BAR ---------- */
+        .topbar {
+            position: absolute; top: 0; left: 0; right: 0; height: 52px; z-index: 6;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 18px; box-sizing: border-box;
+            background: rgba(10,12,14,0.5); border-bottom: 1px solid rgba(255,255,255,0.06);
         }
-        #LB { left: 20px; } #RB { right: 20px; }
+        .brand { display: flex; align-items: center; gap: 9px; }
         .status-dot {
-            position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
-            width: 12px; height: 12px; border-radius: 50%;
-            background-color: #ff3b3b; box-shadow: 0 0 8px rgba(255,59,59,0.6);
-            transition: background-color 0.2s, box-shadow 0.2s; z-index: 5;
+            width: 9px; height: 9px; border-radius: 50%;
+            background: #ff3b3b; box-shadow: 0 0 8px rgba(255,59,59,0.6);
+            transition: background-color .2s, box-shadow .2s;
         }
-        .status-dot.online { background-color: #00ffcc; box-shadow: 0 0 8px rgba(0,255,204,0.7); }
-        #takeover {
-            position: absolute; top: 34px; left: 50%; transform: translateX(-50%);
-            padding: 6px 16px; background-color: #ff8c00; color: #121212;
-            border: none; border-radius: 10px; font-size: 13px; font-weight: bold;
-            white-space: nowrap; z-index: 6;
-        }
-        #takeover.pressed { background-color: #00ffcc; box-shadow: 0 0 14px #00ffcc; }
-        #aiOn {
-            position: absolute; top: 34px; left: 32%; transform: translateX(-50%);
-            padding: 6px 12px; background-color: #00b86b; color: #121212;
-            border: none; border-radius: 10px; font-size: 12px; font-weight: bold;
-            white-space: nowrap; z-index: 6;
-        }
-        #aiOff {
-            position: absolute; top: 34px; left: 68%; transform: translateX(-50%);
-            padding: 6px 12px; background-color: #ff4d4d; color: #121212;
-            border: none; border-radius: 10px; font-size: 12px; font-weight: bold;
-            white-space: nowrap; z-index: 6;
-        }
-        #aiOn.pressed, #aiOff.pressed { box-shadow: 0 0 14px #00ffcc; }
+        .status-dot.online { background: var(--cyan); box-shadow: 0 0 9px var(--cyan); }
+        .brand .name { font-size: 14px; font-weight: bold; letter-spacing: 1px; }
+        #conn { font-size: 11px; letter-spacing: .5px; color: #ff6b6b; }
 
-        /* Voice button */
-        @keyframes micPulse {
-            0%   { box-shadow: 0 0 0 0 rgba(0,255,204,0.7), 0 0 14px #00ffcc; }
-            70%  { box-shadow: 0 0 0 12px rgba(0,255,204,0), 0 0 20px #00ffcc; }
-            100% { box-shadow: 0 0 0 0 rgba(0,255,204,0), 0 0 14px #00ffcc; }
+        /* AI segmented toggle */
+        .aiseg {
+            display: flex; border-radius: 12px; overflow: hidden;
+            background: rgba(255,255,255,0.05); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.10);
         }
-        @keyframes dotBlink {
-            0%, 100% { opacity: 1; } 50% { opacity: 0.2; }
+        .aiseg > div {
+            display: flex; align-items: center; gap: 5px; padding: 9px 12px;
+            font-size: 12px; font-weight: bold; letter-spacing: .5px; color: #8fa3a0;
+            cursor: pointer; transition: background-color .12s, color .12s;
         }
-        #voiceBtn {
-            position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
-            padding: 6px 16px; background-color: #262626; color: #00ffcc;
-            border: 2px solid #00ffcc; border-radius: 10px; font-size: 13px;
-            font-weight: bold; white-space: nowrap; z-index: 6; cursor: pointer;
-            transition: transform 0.1s, background-color 0.1s;
-            -webkit-user-select: none; user-select: none;
-        }
-        #voiceBtn.pressed {
-            background-color: #00ffcc; color: #121212;
-            transform: translateX(-50%) scale(1.08);
-            animation: micPulse 1s ease-out infinite;
-        }
-        #voiceText {
-            position: absolute; top: 96px; left: 50%; transform: translateX(-50%);
-            font-size: 12px; color: #aaa; white-space: nowrap; z-index: 6;
-        }
-        #voiceText .rec-dot {
-            display: inline-block; width: 7px; height: 7px;
-            background: #ff3b3b; border-radius: 50%; margin-right: 4px;
-            vertical-align: middle;
-            animation: dotBlink 0.8s ease-in-out infinite;
+        #follow.lit, #dance.lit, #line.lit { background: var(--cyan); color: #052723; box-shadow: 0 0 16px rgba(0,224,198,0.5); }
+        #takeover.lit { background: var(--red); color: #2a0a0d; }
+        .aiseg > div.pressed { filter: brightness(1.12); }
+        .aiseg .ico { font-size: 14px; line-height: 1; }
+        @media (max-width: 460px) {
+            .aiseg > div { padding: 7px 5px; font-size: 8px; gap: 3px; }
+            .aiseg .ico { font-size: 10px; }
         }
 
-        .dpad-container {
-            display: grid;
-            grid-template-columns: repeat(3, calc(40px * var(--scale-factor)));
-            grid-template-rows: repeat(3, calc(40px * var(--scale-factor)));
-            gap: 0; margin-top: calc(55px * var(--scale-factor));
+        /* E-STOP */
+        #B {
+            width: 46px; height: 46px; border-radius: 50%;
+            background: rgba(255,59,70,0.14); box-shadow: inset 0 0 0 2px var(--red);
+            color: #ff5762; font-size: 10px; font-weight: bold; letter-spacing: .5px;
+            display: flex; align-items: center; justify-content: center; cursor: pointer;
         }
-        #forward  { grid-column: 2; grid-row: 1; }
-        #left     { grid-column: 1; grid-row: 2; }
-        #right    { grid-column: 3; grid-row: 2; }
-        #backward { grid-column: 2; grid-row: 3; }
-        .dpad-center {
-            grid-column: 2; grid-row: 2; background-color: #262626;
-            display: flex; align-items: center; justify-content: center;
-        }
-        .dpad-center::after {
-            content: ''; width: 40%; height: 40%; border-radius: 50%;
-            background-color: #1a1a1a; box-shadow: inset 0 0 6px rgba(0,0,0,0.6);
-        }
-        .dpad-btn {
-            background-color: #262626; border: none; border-radius: 0; color: white;
-            font-size: 20px; font-weight: bold; display: flex;
-            align-items: center; justify-content: center; cursor: pointer;
-        }
-        #forward  { border-radius: 14px 14px 0 0; }
-        #backward { border-radius: 0 0 14px 14px; }
-        #left     { border-radius: 14px 0 0 14px; }
-        #right    { border-radius: 0 14px 14px 0; }
-        .dpad-btn.pressed { background-color: #00ffcc; color: #121212; box-shadow: 0 0 15px #00ffcc; }
+        #B.pressed { background: var(--red); color: #2a0a0d; box-shadow: inset 0 0 0 2px var(--red), 0 0 14px rgba(255,59,70,0.6); }
 
-        .action-diamond {
-            display: grid;
-            grid-template-columns: repeat(3, calc(40px * var(--scale-factor)));
-            grid-template-rows: repeat(3, calc(40px * var(--scale-factor)));
-            gap: 5px; margin-top: calc(50px * var(--scale-factor));
+        /* ---------- JOYSTICKS ---------- */
+        .stick-wrap {
+            position: absolute; bottom: calc(20px * var(--sf));
+            display: flex; flex-direction: column; align-items: center; gap: 7px; z-index: 4;
         }
-        #A { grid-column: 2; grid-row: 1; }
-        #D { grid-column: 1; grid-row: 2; }
-        #B { grid-column: 3; grid-row: 2; }
-        #C { grid-column: 2; grid-row: 3; }
-
-        .joystick-row {
-            position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
-            display: flex; flex-direction: row; gap: calc(40px * var(--scale-factor));
-        }
-        .btn {
-            background-color: #262626; border: 2px solid #3d3d3d; border-radius: 12px;
-            color: white; font-size: 16px; font-weight: bold; display: flex;
-            align-items: center; justify-content: center; cursor: pointer;
-        }
-        .action-btn { border-color: #ff007f; color: #ff007f; font-size: 18px; border-radius: 50%; }
-        .btn.pressed { background-color: #00ffcc; color: #121212; box-shadow: 0 0 15px #00ffcc; }
-        .action-btn.pressed { background-color: #ff007f; color: #121212; box-shadow: 0 0 15px #ff007f; }
+        .stick-wrap.left  { left:  calc(22px * var(--sf)); }
+        .stick-wrap.right { right: calc(22px * var(--sf)); }
         .joystick-zone {
-            width: calc(140px * var(--scale-factor)); height: calc(140px * var(--scale-factor));
-            background-color: #262626; border: 2px dashed #3d3d3d; border-radius: 50%;
-            position: relative; overflow: hidden;
+            width: calc(132px * var(--sf)); height: calc(132px * var(--sf));
+            border-radius: 50%; position: relative; overflow: hidden;
+            background: rgba(255,255,255,0.03); box-shadow: inset 0 0 0 1.5px rgba(0,224,198,0.35);
+        }
+        .joystick-zone::after {
+            content: ''; position: absolute; inset: 18px; border-radius: 50%;
+            border: 1px dashed rgba(255,255,255,0.12);
         }
         .joystick-knob {
             position: absolute; left: 25%; top: 25%; width: 50%; height: 50%;
-            border-radius: 50%; background-color: #00ffcc;
-            box-shadow: 0 0 12px rgba(0,255,204,0.5); pointer-events: none; will-change: transform;
+            border-radius: 50%; background: var(--cyan);
+            box-shadow: 0 0 14px rgba(0,224,198,0.5), inset 0 -3px 7px rgba(0,0,0,0.25);
+            pointer-events: none; will-change: transform;
         }
-        @media (max-width: 850px) and (orientation: landscape) {
-            :root { --scale-factor: 0.8; }
-            .controller-panel { padding: 12px; max-width: 760px; }
-            h1 { font-size: 16px; margin: 0 0 5px 0; }
+        .stick-label { font-size: 10px; letter-spacing: 2px; color: var(--cyan); }
+
+        /* ---------- CENTER: MIC + DOCK ---------- */
+        @keyframes micPulse {
+            0%   { box-shadow: 0 0 0 0 rgba(0,224,198,0.6), 0 0 18px rgba(0,224,198,0.55); }
+            70%  { box-shadow: 0 0 0 14px rgba(0,224,198,0), 0 0 22px rgba(0,224,198,0.55); }
+            100% { box-shadow: 0 0 0 0 rgba(0,224,198,0), 0 0 18px rgba(0,224,198,0.55); }
         }
-        @media (max-height: 380px) and (orientation: landscape) {
-            :root { --scale-factor: 0.68; }
-            .controller-panel { padding: 8px; }
-            .joystick-row { bottom: 8px; }
-            h1 { display: none; }
+        .mic-wrap {
+            position: absolute; left: 50%; bottom: calc(94px * var(--sf)); transform: translateX(-50%);
+            display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 5;
         }
+        #voiceBtn {
+            width: 64px; height: 64px; border-radius: 50%; border: none;
+            background: var(--cyan); color: #052723; font-size: 26px;
+            display: flex; align-items: center; justify-content: center; cursor: pointer;
+            box-shadow: 0 0 20px rgba(0,224,198,0.55); transition: transform .1s;
+        }
+        #voiceBtn.pressed { transform: scale(1.06); animation: micPulse 1s ease-out infinite; }
+        .mic-cap { font-size: 10px; letter-spacing: 1px; color: #8a9997; }
+        #voiceText { font-size: 11px; color: #9aa; height: 13px; white-space: nowrap; }
+        #voiceText .rec-dot {
+            display: inline-block; width: 6px; height: 6px; background: #ff3b3b;
+            border-radius: 50%; margin-right: 5px; vertical-align: middle;
+        }
+
+        .dock {
+            position: absolute; left: 50%; bottom: calc(20px * var(--sf)); transform: translateX(-50%);
+            display: flex; gap: 8px; z-index: 5;
+        }
+        .dbtn {
+            width: 58px; padding: 8px 0; border-radius: 12px; cursor: pointer;
+            background: rgba(255,255,255,0.04); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.10);
+            color: #cfd6d5; font-size: 11px; font-weight: bold; letter-spacing: .5px;
+            display: flex; flex-direction: column; align-items: center; gap: 3px;
+        }
+        .dbtn .ic { font-size: 17px; line-height: 1; }
+        .dbtn.pressed { background: var(--cyan); color: #052723; box-shadow: 0 0 14px rgba(0,224,198,0.5); }
+        #RB.lit { background: rgba(0,224,198,0.16); box-shadow: inset 0 0 0 1px var(--cyan); color: var(--cyan); }
+        #LB.lit { background: rgba(0,224,198,0.16); box-shadow: inset 0 0 0 1px var(--cyan); color: var(--cyan); }
+
+        @media (max-height: 400px) and (orientation: landscape) { :root { --sf: 0.82; } }
+        @media (max-height: 340px) and (orientation: landscape) { :root { --sf: 0.7; } .topbar { height: 44px; } }
     </style>
 </head>
 <body>
-    <div class="wrapper">
-        <h1>Robot Dog Controller</h1>
-        <div class="controller-panel">
-            <div id="status" class="status-dot"></div>
-            <div class="btn" id="aiOn">AI ON</div>
-            <div class="btn" id="takeover">TAKE CONTROL</div>
-            <div class="btn" id="aiOff">AI OFF</div>
+    <div class="panel">
+        <div class="glow"></div>
+        <div class="horizon" style="top:63%;"></div>
+        <div class="horizon" style="top:73%; opacity:.55;"></div>
 
-            <!-- Voice input button -->
-            <div class="btn" id="voiceBtn">🎤 SPEAK</div>
+        <!-- TOP BAR -->
+        <div class="topbar">
+            <div class="brand">
+                <span id="status" class="status-dot"></span>
+                <span class="name">DINGO</span>
+                <span id="conn">OFFLINE</span>
+            </div>
+
+            <div class="aiseg">
+                <div id="follow"><span class="ico">&#128064;</span>FOLLOW</div>
+                <div id="dance"><span class="ico">&#127925;</span>DANCE</div>
+                <div id="line"><span class="ico">&#9998;</span>LINE</div>
+                <div id="takeover" class="lit"><span class="ico">&#9209;</span>AI OFF</div>
+            </div>
+
+            <div id="B">E-STOP</div>
+        </div>
+
+        <!-- LEFT STICK -->
+        <div class="stick-wrap left">
+            <div id="left-joystick-zone" class="joystick-zone"></div>
+            <span class="stick-label" id="leftLabel">HEIGHT</span>
+        </div>
+
+        <!-- RIGHT STICK -->
+        <div class="stick-wrap right">
+            <div id="right-joystick-zone" class="joystick-zone"></div>
+            <span class="stick-label">TURN &middot; TILT</span>
+        </div>
+
+        <!-- CENTER MIC -->
+        <div class="mic-wrap">
+            <div id="voiceBtn">&#127908;</div>
+            <span class="mic-cap">HOLD TO SPEAK</span>
             <div id="voiceText"></div>
+        </div>
 
-            <div class="btn shoulder-btn" id="LB">LB</div>
-            <div class="btn shoulder-btn" id="RB">RB</div>
-
-            <div class="dpad-container">
-                <div class="dpad-btn" id="forward">&#9650;</div>
-                <div class="dpad-btn" id="left">&#9664;</div>
-                <div class="dpad-center"></div>
-                <div class="dpad-btn" id="right">&#9654;</div>
-                <div class="dpad-btn" id="backward">&#9660;</div>
-            </div>
-
-            <div class="action-diamond">
-                <div class="btn action-btn" id="A">A</div>
-                <div class="btn action-btn" id="D">D</div>
-                <div class="btn action-btn" id="B">B</div>
-                <div class="btn action-btn" id="C">C</div>
-            </div>
-
-            <div class="joystick-row">
-                <div id="left-joystick-zone" class="joystick-zone"></div>
-                <div id="right-joystick-zone" class="joystick-zone"></div>
-            </div>
+        <!-- ACTION DOCK -->
+        <div class="dock">
+            <div id="LB" class="dbtn"><span class="ic">&#9211;</span>ENABLE</div>
+            <div id="RB" class="dbtn"><span class="ic">&#127939;</span>TROT</div>
+            <div id="C"  class="dbtn"><span class="ic">&#11014;</span>HOP</div>
         </div>
     </div>
 
@@ -212,13 +189,24 @@
         // --- 0. CONNECTION ---
         let ws = null;
         const statusDot = document.getElementById('status');
+        const connLbl   = document.getElementById('conn');
+
+        function setConn(online, text) {
+            statusDot.classList.toggle('online', online);
+            if (connLbl) { connLbl.textContent = text; connLbl.style.color = online ? 'var(--cyan)' : '#ff6b6b'; }
+        }
 
         function connect() {
             const proto = location.protocol === 'https:' ? 'wss' : 'ws';
             ws = new WebSocket(`${proto}://${location.host}/ws`);
-            ws.onopen  = () => statusDot.classList.add('online');
-            ws.onclose = () => { statusDot.classList.remove('online'); setTimeout(connect, 1000); };
+            ws.onopen  = () => setConn(true, 'CONNECTED');
+            ws.onclose = () => { setConn(false, 'RECONNECTING'); setTimeout(connect, 1000); };
             ws.onerror = () => ws.close();
+            ws.onmessage = (evt) => {
+                let data;
+                try { data = JSON.parse(evt.data); } catch (e) { return; }
+                if (data.type === 'state') applyState(data);
+            };
         }
         connect();
 
@@ -231,17 +219,49 @@
 
         // --- 1. BUTTON INPUT ---
         const activeButtons = {};
-        const allButtons = ['forward','backward','left','right','A','B','C','D','LB','RB','takeover','aiOn','aiOff'];
-        const buttonIdMap = { aiOn: 'ai_on', aiOff: 'ai_off' };
+        const allButtons = ['forward','backward','left','right','A','B','C','D','LB','RB','takeover','follow','dance','line'];
         const joystickTouchIds = new Set();
+
+        // ENABLE/TROT lights are never guessed client-side — they only change
+        // when the robot confirms its real state via a {type:'state'} message.
+        // This is what makes the lit color mean "this is what the robot is
+        // actually doing right now," not "what we hope happened."
+        let trotLit = false;
+        let armLit = false;
+        function applyState(data) {
+            armLit = !!data.armed;
+            trotLit = !!data.trot;
+            document.getElementById('LB').classList.toggle('lit', armLit);
+            document.getElementById('RB').classList.toggle('lit', trotLit);
+            const lbl = document.getElementById('leftLabel');
+            if (lbl) lbl.textContent = trotLit ? 'MOVE' : 'HEIGHT';
+        }
+
+        function updateLatch(id) {
+            const follow = document.getElementById('follow');
+            const dance = document.getElementById('dance');
+            const line = document.getElementById('line');
+            const takeover = document.getElementById('takeover');
+            if (id === 'follow' || id === 'dance' || id === 'line') {
+                if (follow) follow.classList.toggle('lit', id === 'follow');
+                if (dance) dance.classList.toggle('lit', id === 'dance');
+                if (line) line.classList.toggle('lit', id === 'line');
+                if (takeover) takeover.classList.remove('lit');
+            } else if (id === 'takeover') {
+                if (takeover) takeover.classList.add('lit');
+                if (follow) follow.classList.remove('lit');
+                if (dance) dance.classList.remove('lit');
+                if (line) line.classList.remove('lit');
+            }
+        }
 
         function setButtonState(btnId, isPressed) {
             if (isPressed === !!activeButtons[btnId]) return;
             activeButtons[btnId] = isPressed;
             const el = document.getElementById(btnId);
             if (el) el.classList.toggle('pressed', isPressed);
-            const sendId = buttonIdMap[btnId] || btnId;
-            send({ type: 'button', id: sendId, pressed: isPressed });
+            send({ type: 'button', id: btnId, pressed: isPressed });
+            if (isPressed) updateLatch(btnId);
         }
 
         function releaseAll() { allButtons.forEach(id => setButtonState(id, false)); }
@@ -255,8 +275,9 @@
             if (joystickTouchIds.size > 0) { allButtons.forEach(id => setButtonState(id, false)); return; }
             const touched = new Set();
             for (let i = 0; i < e.touches.length; i++) {
-                const el = document.elementFromPoint(e.touches[i].clientX, e.touches[i].clientY);
-                if (el && allButtons.includes(el.id)) touched.add(el.id);
+                let node = document.elementFromPoint(e.touches[i].clientX, e.touches[i].clientY);
+                while (node && !allButtons.includes(node.id)) node = node.parentElement;
+                if (node && allButtons.includes(node.id)) touched.add(node.id);
             }
             allButtons.forEach(id => setButtonState(id, touched.has(id)));
         }
@@ -280,8 +301,7 @@
             'ArrowDown': 'backward', 's': 'backward',
             'ArrowLeft': 'left', 'a': 'left',
             'ArrowRight': 'right', 'd': 'right',
-            '1': 'A', '2': 'B', '3': 'C', '4': 'D',
-            'q': 'LB', 'e': 'RB'
+            '1': 'LB', '2': 'RB', '3': 'C', ' ': 'B'
         };
         window.addEventListener('keydown', e => { const id = keyMap[e.key]; if (id && !activeButtons[id]) setButtonState(id, true); });
         window.addEventListener('keyup',   e => { const id = keyMap[e.key]; if (id) setButtonState(id, false); });
@@ -296,68 +316,49 @@
         if (SR) {
             recog = new SR();
             recog.lang = 'en-US';
-            recog.continuous = true;    // keep listening while button is held
+            recog.continuous = true;
             recog.interimResults = false;
+            // Ask for several hypotheses per utterance, not just the top one.
+            // "higher" is often misheard as the top guess (e.g. "hire") while
+            // the correct word still shows up in a lower-ranked alternative --
+            // checking all of them catches it instead of silently dropping it.
+            recog.maxAlternatives = 5;
 
             recog.onresult = (e) => {
-                // continuous mode: grab the latest result
-                const text = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
-                voiceText.innerHTML = 'heard: <b style="color:#00ffcc">' + text + '</b>';
-                for (const k of VOICE_KEYWORDS) {
-                    if (text.includes(k)) { send({ type: 'voice', text: k }); break; }
+                const result = e.results[e.results.length - 1];
+                let matched = null;
+                for (let i = 0; i < result.length; i++) {
+                    const alt = result[i].transcript.trim().toLowerCase();
+                    if (i === 0) voiceText.innerHTML = 'heard: <b style="color:#00e0c6">' + alt + '</b>';
+                    for (const k of VOICE_KEYWORDS) {
+                        if (alt.includes(k)) { matched = k; break; }
+                    }
+                    if (matched) break;
                 }
+                if (matched) send({ type: 'voice', text: matched });
             };
-            recog.onend = () => {
-                voiceBtn.classList.remove('pressed');
-                voiceBtn.textContent = '🎤 HOLD TO SPEAK';
-            };
-            recog.onerror = (e) => {
-                voiceText.textContent = 'voice error: ' + e.error;
-                voiceBtn.classList.remove('pressed');
-                voiceBtn.textContent = '🎤 HOLD TO SPEAK';
-            };
-
-            voiceBtn.textContent = '🎤 HOLD TO SPEAK';
+            recog.onend = () => { voiceBtn.classList.remove('pressed'); };
+            recog.onerror = (e) => { voiceText.textContent = 'voice error: ' + e.error; voiceBtn.classList.remove('pressed'); };
 
             function startVoice() {
                 try {
                     recog.start();
                     voiceBtn.classList.add('pressed');
-                    voiceBtn.textContent = '🔴 LISTENING...';
-                    voiceText.innerHTML = '<span class="rec-dot"></span>hold & speak a command';
+                    voiceText.innerHTML = '<span class="rec-dot"></span>listening&hellip;';
                 } catch (err) { /* already started */ }
             }
-            function stopVoice() {
-                try { recog.stop(); } catch (err) {}
-            }
+            function stopVoice() { try { recog.stop(); } catch (err) {} }
 
-            // Hold to talk: press = start listening, release = stop
-            voiceBtn.addEventListener('touchstart', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                startVoice();
-            }, { passive: false });
-            voiceBtn.addEventListener('touchend', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                stopVoice();
-            }, { passive: false });
-            voiceBtn.addEventListener('touchcancel', (e) => {
-                e.stopPropagation();
-                try { recog.abort(); } catch (err) {}
-                voiceBtn.classList.remove('pressed');
-                voiceBtn.textContent = '🎤 HOLD TO SPEAK';
-                voiceText.textContent = '';
-            }, { passive: false });
+            voiceBtn.addEventListener('touchstart', (e) => { e.stopPropagation(); e.preventDefault(); startVoice(); }, { passive: false });
+            voiceBtn.addEventListener('touchend',   (e) => { e.stopPropagation(); e.preventDefault(); stopVoice(); }, { passive: false });
+            voiceBtn.addEventListener('touchcancel',(e) => { e.stopPropagation(); try { recog.abort(); } catch (err) {} voiceBtn.classList.remove('pressed'); voiceText.textContent = ''; }, { passive: false });
 
-            // Desktop fallback
             voiceBtn.addEventListener('mousedown', startVoice);
             voiceBtn.addEventListener('mouseup',   stopVoice);
             voiceBtn.addEventListener('mouseleave', stopVoice);
-
         } else {
             voiceBtn.style.display = 'none';
-            voiceText.textContent = 'voice not supported on this browser';
+            voiceText.textContent = 'voice not supported';
         }
 
         // --- 3. JOYSTICK (custom, no library) ---
